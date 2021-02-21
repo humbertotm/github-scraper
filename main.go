@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"ghscraper.htm/log"
 	"ghscraper.htm/system"
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
-const maxRequests = 5
+const maxRequests = 10
 const exceededRequestLimitStatus = http.StatusForbidden
 const repoProperties = `{
 external_id: $external_id,
@@ -38,33 +37,6 @@ created_at: $created_at,
 updated_at: $updated_at
 }`
 
-type User struct {
-	Username     string `json:"login"`
-	ExternalID   int    `json:"id"`
-	UserURL      string `json:"url"`
-	FollowersURL string `json:"followers_url"`
-	FollowingURL string `json:"following_url"`
-	ReposURL     string `json:"repos_url"`
-	Type         string `json:"type"`
-	SiteAdmin    bool   `json:"site_admin"`
-	CreatedAt    *time.Time
-	UpdatedAt    *time.Time
-}
-
-type Repo struct {
-	ExternalID      int    `json:"id"`
-	Name            string `json:"name"`
-	FullName        string `json:"full_name"`
-	Owner           *User  `json:"owner"`
-	HTMLUrl         string `json:"html_url"`
-	URL             string `json:"url"`
-	ContributorsURL string `json:"contributors_url"`
-	IssuesURL       string `json:"issues_url"`
-	LanguagesURL    string `json:"languages_url"`
-	CreatedAt       *time.Time
-	UpdatedAt       *time.Time
-}
-
 func main() {
 	if err := system.InitConfig(); err != nil {
 		log.Fatal.Fatal("Failed to set up config from environment")
@@ -89,15 +61,21 @@ func InitDbDriver() (neo4j.Driver, error) {
 }
 
 func Scrape(driver neo4j.Driver) error {
+	// minRepoID := getMinRepoID(driver)
 	minRepoID := 0
 	requestCount := 0
 	for requestCount <= maxRequests {
+
 		repos, err := GetRepos(&requestCount, minRepoID)
 		if err != nil {
 			log.Error.Println(err.Error())
 			return err
 		}
-
+		if len(repos) == 0 {
+			if err := ScrapeByUser(&requestCount, driver); err != nil {
+				return err
+			}
+		} // [wololo] add an else here
 		for _, repo := range repos {
 			if err := CreateRepo(driver, repo); err != nil {
 				log.Error.Print(err.Error())
@@ -108,6 +86,18 @@ func Scrape(driver neo4j.Driver) error {
 			if err := CreateOwner(driver, owner, repo); err != nil {
 				log.Error.Print(err.Error())
 				continue
+			}
+
+			contributors, err := GetContributors(&requestCount, repo)
+			if err != nil {
+				log.Error.Print(err.Error())
+				continue
+			}
+			for _, contributor := range contributors {
+				if err := CreateContributor(driver, repo, contributor); err != nil {
+					log.Error.Print(err.Error())
+					continue
+				}
 			}
 
 			followers, err := GetFollowers(&requestCount, owner)
@@ -133,21 +123,51 @@ func Scrape(driver neo4j.Driver) error {
 					continue
 				}
 			}
-
-			contributors, err := GetContributors(&requestCount, repo)
-			if err != nil {
-				log.Error.Print(err.Error())
-				continue
-			}
-			for _, contributor := range contributors {
-				if err := CreateContributor(driver, repo, contributor); err != nil {
-					log.Error.Print(err.Error())
-					continue
-				}
-			}
 		}
 
 	}
+	return nil
+}
+
+func ScrapeByUser(requestCount *int, driver neo4j.Driver) error {
+	// [wololo] Still need to create/update the bookmark when no more requests
+	// can be made
+	minID := getMinUserID(driver)
+	users, err := GetUsers(requestCount, minID)
+	if err != nil {
+		return err
+	}
+
+	if len(users) == 0 {
+		return fmt.Errorf("No more users to process")
+	}
+
+	for _, user := range users {
+		followers, err := GetFollowers(requestCount, user)
+		if err != nil {
+			log.Error.Print(err.Error())
+			continue
+		}
+		for _, follower := range followers {
+			if err := CreateFollower(driver, user, follower); err != nil {
+				log.Error.Print(err.Error())
+				continue
+			}
+		}
+
+		followings, err := GetFollowing(requestCount, user)
+		if err != nil {
+			log.Error.Print(err.Error())
+			continue
+		}
+		for _, following := range followings {
+			if err := CreateFollower(driver, following, user); err != nil {
+				log.Error.Print(err.Error())
+				continue
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -155,7 +175,36 @@ func GetRepos(reqCounter *int, minID int) ([]map[string]interface{}, error) {
 	client := &http.Client{}
 	var respJSON []map[string]interface{}
 
+	// [wololo] Include minid in request params
 	req, err := http.NewRequest("GET", "https://api.github.com/repositories", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Accept", "application/vnd.github.v3+json")
+
+	*reqCounter = *reqCounter + 1
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Request limit exceeded")
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&respJSON); err != nil {
+		return nil, err
+	}
+
+	return respJSON, nil
+}
+
+func GetUsers(reqCounter *int, minID int) ([]map[string]interface{}, error) {
+	client := &http.Client{}
+	var respJSON []map[string]interface{}
+
+	// [wololo] Include minid in request params
+	req, err := http.NewRequest("GET", "https://api.github.com/users", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +406,45 @@ func CreateContributorRelationship(driver neo4j.Driver, repo, contributor map[st
 
 // 	return WriteItem(driver, query, propertiesMap)
 // }
+
+func getMinRepoID(driver neo4j.Driver) int {
+	query := "MATCH (r:Repo) RETURN r.external_id ORDER BY r.external_id DESC LIMIT 1"
+	data, err := Query(driver, query, nil)
+	if err != nil {
+		return 0
+	}
+
+	return int(data.Values[0].(float64))
+
+}
+
+func getMinUserID(driver neo4j.Driver) int {
+	query := "MATCH (b:UserBookmark) RETURN b.external_id ORDER BY r.external_id DESC LIMIT 1"
+	data, err := Query(driver, query, nil)
+	if err != nil {
+		return 0
+	}
+
+	return int(data.Values[0].(float64))
+
+}
+
+func Query(driver neo4j.Driver, query string, item map[string]interface{}) (neo4j.Record, error) {
+	session := driver.NewSession(neo4j.SessionConfig{})
+	defer session.Close()
+	data, err := session.Run(query, item)
+	if err != nil {
+		return neo4j.Record{}, err
+	}
+
+	// Need in order for record to be resolvable ???
+	if !data.Next() {
+		return neo4j.Record{}, fmt.Errorf("No record found")
+	}
+	// fmt.Println(data.Next())
+	// fmt.Println(data.Record().Values[0])
+	return *data.Record(), nil
+}
 
 func WriteItem(driver neo4j.Driver, query string, item map[string]interface{}) error {
 	session := driver.NewSession(neo4j.SessionConfig{})
