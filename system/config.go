@@ -1,8 +1,6 @@
 package system
 
 import (
-	"fmt"
-
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 )
@@ -10,9 +8,11 @@ import (
 var Cfg EnvConfig
 
 type EnvConfig struct {
-	Mode    string `envconfig:"mode"`
-	LogFile string `envconfig:"log_file"`
-	DbType  string `envconfig:"db_type"`
+	Mode           string `envconfig:"mode"`
+	DbURL          string `envconfig:"db_url"`
+	GithubBaseURL  string `envconfig:"github_base_url"`
+	LogFile        string `envconfig:"log_file"`
+	BasicAuthToken string `envconfig:"basic_auth_token"`
 }
 
 func InitConfig() error {
@@ -28,7 +28,13 @@ func InitConfig() error {
 }
 
 func IsDev() bool {
-	fmt.Printf("cfg mode: %s\n", Cfg.Mode)
-	fmt.Printf("cfg db type: %s\n", Cfg.DbType)
 	return Cfg.Mode == "dev"
+}
+
+func MaxRequestPerHour() int {
+	if Cfg.BasicAuthToken != "" {
+		return 5000
+	}
+
+	return 60
 }
