@@ -3,10 +3,10 @@ package main
 import (
 	"os"
 
+	"ghscraper.htm/db"
 	"ghscraper.htm/log"
 	"ghscraper.htm/scraper/service"
 	"ghscraper.htm/system"
-	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
 func main() {
@@ -15,7 +15,7 @@ func main() {
 	}
 	log.InitLogger()
 
-	db, err := InitDb()
+	db, err := db.InitDb()
 	if err != nil {
 		log.Fatal.Fatal(err.Error())
 	}
@@ -30,8 +30,4 @@ func main() {
 
 	log.Info.Println("You're done! Come back in an hour once your request rate limit has been reset")
 	os.Exit(0)
-}
-
-func InitDb() (neo4j.Driver, error) {
-	return neo4j.NewDriver(system.Cfg.DbURL, neo4j.BasicAuth("", "", ""))
 }

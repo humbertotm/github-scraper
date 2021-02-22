@@ -11,6 +11,7 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
+// ScraperService defines the interface for a scraper entity
 type ScraperService interface {
 	Scrape() error
 }
@@ -22,6 +23,7 @@ type scraperService struct {
 
 var scraper ScraperService
 
+// NewScraperService returns an instance of ScraperService
 func NewScraperService(db neo4j.Driver, baseURL string) ScraperService {
 	if scraper == nil {
 		scraper = &scraperService{
@@ -33,10 +35,12 @@ func NewScraperService(db neo4j.Driver, baseURL string) ScraperService {
 	return scraper
 }
 
+// Scrape defines the general flow for scraping external API.
+// It begins by scraping repos and its satellite users (owner and its respective
+// followers and followees).
+// Once repos are exhausted, it continues by scraping users in order by external_id
 func (s *scraperService) Scrape() error {
-
 	for s.externalAPI.ReqCount() <= system.MaxRequestPerHour() {
-		log.Info.Printf("Starting loop again, reqCount: %d\n", s.externalAPI.ReqCount())
 		if err := s.scrapeRepos(); err != nil {
 			if err.Error() == "No more repos to scrape" {
 				log.Info.Println("No more repos left to scrape. Continuing to scrape users")
@@ -48,7 +52,6 @@ func (s *scraperService) Scrape() error {
 		if err := s.scrapeUsers(); err != nil {
 			return err
 		}
-
 	}
 
 	return nil
@@ -177,6 +180,8 @@ func (s *scraperService) scrapeUsers() error {
 	return nil
 }
 
+// Auxiliary functions dealing with the creation of nodes and relationships ensuring
+// certain guarantees in terms of node/vertex creation order
 func (s *scraperService) createOwner(owner, repo map[string]interface{}) error {
 	if err := s.dataStore.WriteNode(domain.UserLabel, owner); err != nil {
 		return err

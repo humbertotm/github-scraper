@@ -33,10 +33,10 @@ const userProperties = `{
        updated_at: $updated_at
 }`
 
+// DataStore defines the interface for the persistent storage layer
 type DataStore interface {
 	WriteNode(nodeLabel string, nodeProperties map[string]interface{}) error
 	WriteRelationship(startNode, endNode domain.RelationshipNodeData, relationshipLabel string) error
-	// MergeNodeAndRelationship(nodeLabel string, mergeNode map[string]interface{}, startNodeData, endNodeData domain.RelationshipNodeData, relLabel string) error
 	ReadMaxRepoExternalID() int
 	ReadUserBookmark() int
 	UpdateUserBookmark(external_id interface{}) error
@@ -48,6 +48,7 @@ type dataStore struct {
 
 var store DataStore
 
+// NewDataStore returns an instance implementing DataStore
 func NewDataStore(db neo4j.Driver) DataStore {
 	if store == nil {
 		store = &dataStore{db: db}
@@ -56,18 +57,7 @@ func NewDataStore(db neo4j.Driver) DataStore {
 	return store
 }
 
-// func (dw *dataStore) MergeNodeAndRelationship(nodeLabel string, mergeNode map[string]interface{}, startNodeData, endNodeData domain.RelationshipNodeData, relLabel string) error {
-// 	if err := dw.WriteNode(nodeLabel, startNode); err != nil {
-// 		return err
-// 	}
-
-// 	if err := dw.WriteRelationship(startNodeData, endNodeData, relLabel); err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// }
-
+// WriteNode inserts a node with the specified label and properties if it does not exist
 func (dw *dataStore) WriteNode(nodeLabel string, nodeProperties map[string]interface{}) error {
 	properties := dw.getPropertiesString(nodeLabel)
 	paramsMap := dw.getParamsMap(nodeLabel, nodeProperties)
@@ -77,6 +67,7 @@ func (dw *dataStore) WriteNode(nodeLabel string, nodeProperties map[string]inter
 	return dw.write(query, paramsMap)
 }
 
+// WriteRelationship inserts a vertex specifying a relationship between two nodes
 func (dw *dataStore) WriteRelationship(startNode, endNode domain.RelationshipNodeData, relationshipLabel string) error {
 	query := dw.buildRelationshipQuery(startNode, endNode, relationshipLabel)
 	paramsMap := map[string]interface{}{
@@ -88,6 +79,8 @@ func (dw *dataStore) WriteRelationship(startNode, endNode domain.RelationshipNod
 	return dw.write(query, paramsMap)
 }
 
+// ReadMaxRepoExternalID returns the max repo ID for the scraping process to pick up where
+// it left off when scraping by repos
 func (dw *dataStore) ReadMaxRepoExternalID() int {
 	query := "MATCH (r:Repo) RETURN r.external_id ORDER BY r.external_id DESC LIMIT 1"
 	data, err := dw.query(query, nil)
@@ -98,6 +91,8 @@ func (dw *dataStore) ReadMaxRepoExternalID() int {
 	return int(data.Values[0].(float64))
 }
 
+// ReadUserBookmark returns the id of the bookmarked user node for the scraping process to
+// pick up where it left off when scraping by users
 func (dw *dataStore) ReadUserBookmark() int {
 	query := "MATCH (b:UserBookmark) RETURN b.external_id LIMIT 1"
 	data, err := dw.query(query, nil)
@@ -107,6 +102,9 @@ func (dw *dataStore) ReadUserBookmark() int {
 
 	return int(data.Values[0].(int64))
 }
+
+// UpdateUserBookmark updates the bookmark with last user external_id it retrieved from
+// external API
 func (dw *dataStore) UpdateUserBookmark(external_id interface{}) error {
 	query := "MERGE (b:UserBookmark) SET b.external_id = $external_id"
 
