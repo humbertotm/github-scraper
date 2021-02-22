@@ -6,5 +6,5 @@ import (
 )
 
 func InitDb() (neo4j.Driver, error) {
-	return neo4j.NewDriver(system.Cfg.DbURL, neo4j.BasicAuth("", "", ""))
+	return neo4j.NewDriver(system.Cfg.DbURL, neo4j.BasicAuth(system.Cfg.DbUsername, system.Cfg.DbPassword, ""))
 }

@@ -10,6 +10,8 @@ var Cfg EnvConfig
 type EnvConfig struct {
 	Mode           string `envconfig:"mode"`
 	DbURL          string `envconfig:"db_url"`
+	DbUsername     string `envconfig:"db_username"`
+	DbPassword     string `envconfig:"db_password"`
 	GithubBaseURL  string `envconfig:"github_base_url"`
 	LogFile        string `envconfig:"log_file"`
 	BasicAuthToken string `envconfig:"basic_auth_token"`

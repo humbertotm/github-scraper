@@ -137,7 +137,6 @@ func (dw *dataStore) query(query string, params map[string]interface{}) (neo4j.R
 		return neo4j.Record{}, err
 	}
 
-	// [wololo] Perhaps we could convert this into queryOne and use data.Single()
 	if !data.Next() {
 		return neo4j.Record{}, fmt.Errorf("No record found")
 	}
