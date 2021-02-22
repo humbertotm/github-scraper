@@ -63,6 +63,9 @@ func (a *externalAPI) Get(resourceUrl string) ([]map[string]interface{}, error) 
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("Rate limit exceeded")
+		}
 		return nil, fmt.Errorf("Received non OK http status from third party, status: %d", resp.StatusCode)
 	}
 

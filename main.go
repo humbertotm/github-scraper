@@ -24,10 +24,14 @@ func main() {
 	ghScraperService := service.NewScraperService(db, system.Cfg.GithubBaseURL)
 
 	if err := ghScraperService.Scrape(); err != nil {
+		if err.Error() == "Rate limit exceeded" {
+			log.Info.Println("Rate limit exceeded. Terminating process.")
+			os.Exit(0)
+		}
 		log.Error.Println(err.Error())
 		os.Exit(1)
 	}
 
-	log.Info.Println("You're done! Come back in an hour once your request rate limit has been reset")
+	log.Info.Println("You're done!")
 	os.Exit(0)
 }
